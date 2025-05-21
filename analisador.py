@@ -135,6 +135,67 @@ class ASTNode:
             'children': [child.to_dict() for child in self.children]
         }
 
+    def get_type(self):
+        """Retorna o tipo da expressão representada por este nó"""
+        if self.type == 'INT':
+            return 'INT'
+        elif self.type == 'REAL':
+            return 'REAL'
+        elif self.type == 'MEM':
+            return 'REAL'  # MEM sempre armazena REAL
+        elif self.type == 'MEM_ASSIGN':
+            return self.children[0].get_type()
+        elif self.type == 'RES':
+            return 'REAL'  # Histórico pode ser INT ou REAL, mas por simplicidade retornamos REAL
+        elif self.type == 'IF':
+            # Verifica se a condição é booleana ou numérica
+            cond_type = self.children[0].get_type()
+            if cond_type not in ['INT', 'REAL', 'BOOL']:
+                raise TypeError(f"Condição do IF deve ser numérica ou booleana, recebeu {cond_type}")
+            
+            # Verifica se os branches têm o mesmo tipo
+            then_type = self.children[1].get_type()
+            else_type = self.children[2].get_type()
+            if then_type != else_type:
+                raise TypeError(f"Branches do IF devem ter o mesmo tipo. Recebeu {then_type} e {else_type}")
+            return then_type
+        elif self.type == 'FOR':
+            # Verifica se o contador é inteiro
+            count_type = self.children[0].get_type()
+            if count_type != 'INT':
+                raise TypeError(f"Contador do FOR deve ser INT, recebeu {count_type}")
+            return self.children[1].get_type()
+        elif self.type == 'BINARY_OP':
+            left_type = self.children[0].get_type()
+            right_type = self.children[1].get_type()
+            op = self.value
+
+            # Operações aritméticas
+            if op in {'+', '-', '*', '^'}:
+                if left_type == 'REAL' or right_type == 'REAL':
+                    return 'REAL'
+                elif left_type == 'INT' and right_type == 'INT':
+                    return 'INT'
+                else:
+                    raise TypeError(f"Operação {op} não suportada entre {left_type} e {right_type}")
+            
+            # Operações de divisão
+            elif op in {'/', '|', '%'}:
+                if left_type not in ['INT', 'REAL'] or right_type not in ['INT', 'REAL']:
+                    raise TypeError(f"Operação {op} requer operandos numéricos")
+                return 'REAL'
+            
+            # Operações de comparação
+            elif op in {'<', '>', '==', '!=', '<=', '>='}:
+                if left_type not in ['INT', 'REAL'] or right_type not in ['INT', 'REAL']:
+                    raise TypeError(f"Operação {op} requer operandos numéricos")
+                return 'BOOL'
+            
+            else:
+                raise TypeError(f"Operador desconhecido: {op}")
+        else:
+            raise TypeError(f"Tipo desconhecido: {self.type}")
+
 class LL1Parser:
     """LL(1) Parser for the RPN language"""
     
@@ -181,8 +242,10 @@ class LL1Parser:
             return self.parse_paren_expr()
         elif self.current_token.type in ['INT', 'REAL']:
             return self.parse_number()
+        elif self.current_token.value == 'if':
+            return self.parse_if()
         else:
-            raise SyntaxError(f"Unexpected token {self.current_token}")
+            raise SyntaxError(f"Token inesperado {self.current_token}. Lembre-se que a sintaxe deve estar em RPN (Reverse Polish Notation).\nExemplo: if ( 5 10 < ) then ( 20 15 + ) else ( 50 15 - )")
     
     def parse_paren_expr(self):
         """Parse expression inside parentheses"""
@@ -223,15 +286,16 @@ class LL1Parser:
                 self.advance()  # consume ')'
                 return ASTNode('MEM_ASSIGN', children=[value])
         
-        # Standard RPN expression: (operand operand operator)
+        # Parse infix expression: (operand operator operand)
         operand1 = self.parse_operand()
-        operand2 = self.parse_operand()
         
         if not self.is_operator(self.current_token):
             raise SyntaxError(f"Expected operator, got {self.current_token}")
         
         operator = self.current_token.value
         self.advance()  # consume operator
+        
+        operand2 = self.parse_operand()
         
         if self.current_token.value != ')':
             raise SyntaxError(f"Expected ')', got {self.current_token}")
@@ -255,23 +319,70 @@ class LL1Parser:
         """Parse if-then-else expression"""
         self.advance()  # consume 'if'
         
-        condition = self.parse_expr()
+        if self.current_token.value != '(':
+            raise SyntaxError(f"Esperado '(' após 'if', recebeu {self.current_token}")
+        self.advance()  # consume '('
         
-        if self.current_token.value != 'then':
-            raise SyntaxError(f"Expected 'then', got {self.current_token}")
-        self.advance()
+        # Parse condition in infix format
+        left = self.parse_operand()
         
-        then_branch = self.parse_expr()
+        if not self.is_operator(self.current_token):
+            raise SyntaxError(f"Esperado operador, recebeu {self.current_token}")
+        operator = self.current_token.value
+        self.advance()  # consume operator
         
-        if self.current_token.value != 'else':
-            raise SyntaxError(f"Expected 'else', got {self.current_token}")
-        self.advance()
-        
-        else_branch = self.parse_expr()
+        right = self.parse_operand()
+        condition = ASTNode('BINARY_OP', value=operator, children=[left, right])
         
         if self.current_token.value != ')':
-            raise SyntaxError(f"Expected ')', got {self.current_token}")
-        self.advance()
+            raise SyntaxError(f"Esperado ')', recebeu {self.current_token}")
+        self.advance()  # consume ')'
+        
+        if self.current_token.value != 'then':
+            raise SyntaxError(f"Esperado 'then', recebeu {self.current_token}")
+        self.advance()  # consume 'then'
+        
+        if self.current_token.value != '(':
+            raise SyntaxError(f"Esperado '(' após 'then', recebeu {self.current_token}")
+        self.advance()  # consume '('
+        
+        # Parse then branch in infix format
+        left = self.parse_operand()
+        
+        if not self.is_operator(self.current_token):
+            raise SyntaxError(f"Esperado operador, recebeu {self.current_token}")
+        operator = self.current_token.value
+        self.advance()  # consume operator
+        
+        right = self.parse_operand()
+        then_branch = ASTNode('BINARY_OP', value=operator, children=[left, right])
+        
+        if self.current_token.value != ')':
+            raise SyntaxError(f"Esperado ')', recebeu {self.current_token}")
+        self.advance()  # consume ')'
+        
+        if self.current_token.value != 'else':
+            raise SyntaxError(f"Esperado 'else', recebeu {self.current_token}")
+        self.advance()  # consume 'else'
+        
+        if self.current_token.value != '(':
+            raise SyntaxError(f"Esperado '(' após 'else', recebeu {self.current_token}")
+        self.advance()  # consume '('
+        
+        # Parse else branch in infix format
+        left = self.parse_operand()
+        
+        if not self.is_operator(self.current_token):
+            raise SyntaxError(f"Esperado operador, recebeu {self.current_token}")
+        operator = self.current_token.value
+        self.advance()  # consume operator
+        
+        right = self.parse_operand()
+        else_branch = ASTNode('BINARY_OP', value=operator, children=[left, right])
+        
+        if self.current_token.value != ')':
+            raise SyntaxError(f"Esperado ')', recebeu {self.current_token}")
+        self.advance()  # consume ')'
         
         return ASTNode('IF', children=[condition, then_branch, else_branch])
     
@@ -397,6 +508,12 @@ def evaluate_ast(node):
     if node is None:
         raise ValueError("Null node in AST evaluation")
     
+    # Primeiro verifica o tipo da expressão
+    try:
+        node_type = node.get_type()
+    except TypeError as e:
+        raise TypeError(f"Erro de tipo: {str(e)}")
+    
     if node.type == 'INT':
         return int(node.value)
     elif node.type == 'REAL':
@@ -416,6 +533,9 @@ def evaluate_ast(node):
             return 0  # Default value if index is out of bounds
     elif node.type == 'IF':
         cond = evaluate_ast(node.children[0])
+        # Trata condição booleana ou numérica
+        if isinstance(cond, (int, float)):
+            cond = bool(cond)
         if cond:
             return evaluate_ast(node.children[1])
         else:
@@ -431,38 +551,61 @@ def evaluate_ast(node):
         right = evaluate_ast(node.children[1])
         op = node.value
         
-        if op == '+': 
-            return FLOAT_TYPE(left + right)
-        elif op == '-': 
-            return FLOAT_TYPE(left - right)
-        elif op == '*': 
-            return FLOAT_TYPE(left * right)
-        elif op == '/':  # Integer division
-            if right == 0:
-                raise ZeroDivisionError("Integer division by zero")
-            return int(left) // int(right)
-        elif op == '%':  # Modulo
-            if right == 0:
-                raise ZeroDivisionError("Modulo by zero")
-            return int(left) % int(right)
-        elif op == '^':  # Power with integer exponent
-            return FLOAT_TYPE(left ** int(right))
-        elif op == '|':  # Real division
-            if right == 0:
-                raise ZeroDivisionError("Real division by zero")
-            return FLOAT_TYPE(left / right)
-        elif op == '<': 
-            return 1 if left < right else 0
-        elif op == '>': 
-            return 1 if left > right else 0
-        elif op == '==': 
-            return 1 if left == right else 0
-        elif op == '!=': 
-            return 1 if left != right else 0
-        elif op == '<=': 
-            return 1 if left <= right else 0
-        elif op == '>=': 
-            return 1 if left >= right else 0
+        # Verifica o tipo da operação
+        if node_type == 'BOOL':
+            # Operações de comparação
+            if op == '<': 
+                return 1 if left < right else 0
+            elif op == '>': 
+                return 1 if left > right else 0
+            elif op == '==': 
+                return 1 if left == right else 0
+            elif op == '!=': 
+                return 1 if left != right else 0
+            elif op == '<=': 
+                return 1 if left <= right else 0
+            elif op == '>=': 
+                return 1 if left >= right else 0
+        elif node_type == 'REAL':
+            # Operações que sempre retornam REAL
+            if op == '+': 
+                return FLOAT_TYPE(left + right)
+            elif op == '-': 
+                return FLOAT_TYPE(left - right)
+            elif op == '*': 
+                return FLOAT_TYPE(left * right)
+            elif op == '/':  # Divisão real
+                if right == 0:
+                    raise ZeroDivisionError("Divisão por zero")
+                return FLOAT_TYPE(left / right)
+            elif op == '%':  # Modulo
+                if right == 0:
+                    raise ZeroDivisionError("Modulo por zero")
+                return FLOAT_TYPE(left % right)
+            elif op == '^':  # Power
+                return FLOAT_TYPE(left ** right)
+            elif op == '|':  # Divisão real
+                if right == 0:
+                    raise ZeroDivisionError("Divisão por zero")
+                return FLOAT_TYPE(left / right)
+        elif node_type == 'INT':
+            # Operações que retornam INT
+            if op == '+': 
+                return int(left + right)
+            elif op == '-': 
+                return int(left - right)
+            elif op == '*': 
+                return int(left * right)
+            elif op == '/':  # Divisão inteira
+                if right == 0:
+                    raise ZeroDivisionError("Divisão por zero")
+                return int(left) // int(right)
+            elif op == '%':  # Modulo
+                if right == 0:
+                    raise ZeroDivisionError("Modulo por zero")
+                return int(left) % int(right)
+            elif op == '^':  # Power com expoente inteiro
+                return int(left ** int(right))
     else:
         raise ValueError(f"Unknown node type: {node.type}")
 
@@ -500,7 +643,12 @@ def visualize_ast(node, filename="ast"):
 def print_ast_text(node, indent=0):
     """Print AST in text format on terminal"""
     prefix = "  " * indent
-    print(f"{prefix}{node.type}", end="")
+    tipo = ""
+    try:
+        tipo = f" [{node.get_type()}]"
+    except TypeError as e:
+        tipo = f" [ERRO: {str(e)}]"
+    print(f"{prefix}{node.type}{tipo}", end="")
     if node.value is not None:
         print(f": {node.value}")
     else:
