@@ -642,67 +642,71 @@ def print_ast_text(node, indent=0):
     for child in node.children:
         print_ast_text(child, indent + 1)
 
+def ast_to_json(node):
+    """Converte um nó AST para formato JSON"""
+    return node.to_dict()
+
 def main():
-    """Main execution function"""
-    if len(sys.argv) != 2:
-        print("Usage: python analisador.py input.txt")
+    if len(sys.argv) < 2:
+        print("❌ Por favor, forneça um arquivo de entrada.")
+        print("Uso: python analisador.py <arquivo_entrada>")
         sys.exit(1)
 
-    filename = sys.argv[1]
+    input_file = sys.argv[1]
     
-    # Print system information
-    print(f"System architecture: {platform.machine()}")
-    print(f"Using float type: {FLOAT_TYPE}")
-    print()
-    
-    with open(filename, 'r') as f:
-        lines = f.readlines()
-
-    for idx, line in enumerate(lines):
-        # Skip empty lines
-        if not line.strip():
-            continue
+    try:
+        with open(input_file, 'r') as f:
+            lines = f.readlines()
             
-        print(f"\n{'='*50}")
-        print(f"Line {idx+1}: {line.strip()}")
-        print(f"{'='*50}")
-        
-        try:
-            # Lexical Analysis
-            tokens = dfa_lexer(line.strip(), idx+1)
-            
-            # Skip comment lines
-            if not tokens:
-                print("💬 Comment line ignored")
+        for line_num, line in enumerate(lines, 1):
+            line = line.strip()
+            if not line or line.startswith('#'):
                 continue
                 
-            print("\n--- TOKENS ---")
-            for i, t in enumerate(tokens):
-                print(f"  Token[{i}] => value: '{t.value}', class: {t.type}, position: ({t.line}, {t.col})")
+            print(f"\n📝 Processando linha {line_num}: {line}")
             
-            # Syntactic Analysis
-            parser = LL1Parser(tokens)
-            ast = parser.parse()
-            
-            print("\n--- ABSTRACT SYNTAX TREE ---")
-            print_ast_text(ast)
-            
-            # Evaluation
-            result = evaluate_ast(ast)
-            history.append(result)
-            
-            print(f"\n--- RESULT ---")
-            print(f"✅ Value: {result}")
-            
-            # AST Visualization
-            visualize_ast(ast, f"ast_line_{idx+1}")
-            
-        except ZeroDivisionError as e:
-            print(f"\n❌ ARITHMETIC ERROR: {str(e)}")
-        except SyntaxError as e:
-            print(f"\n❌ SYNTAX ERROR: {str(e)}")
-        except Exception as e:
-            print(f"\n❌ ERROR: {str(e)}")
+            # Lexical analysis
+            tokens = dfa_lexer(line, line_num)
+            if not tokens:
+                continue
+                
+            print("\n🔍 Tokens encontrados:")
+            for token in tokens:
+                print(f"  {token}")
+                
+            # Syntactic analysis
+            try:
+                parser = LL1Parser(tokens)
+                ast = parser.parse()
+                
+                # Convertendo AST para JSON
+                ast_json = ast_to_json(ast)
+                print("\n📊 AST em formato JSON:")
+                print(json.dumps(ast_json, indent=2))
+                
+                # Visualização do AST
+                if GRAPHVIZ_AVAILABLE:
+                    visualize_ast(ast, f"ast_line_{line_num}")
+                    print(f"\n🖼️  AST visualizado em ast_line_{line_num}.pdf")
+                else:
+                    print("\n📝 Representação textual do AST:")
+                    print_ast_text(ast)
+                
+                # Evaluation
+                result = evaluate_ast(ast)
+                print(f"\n✨ Resultado: {result}")
+                
+            except SyntaxError as e:
+                print(f"❌ Erro de sintaxe: {e}")
+            except TypeError as e:
+                print(f"❌ Erro de tipo: {e}")
+            except Exception as e:
+                print(f"❌ Erro inesperado: {e}")
+                
+    except FileNotFoundError:
+        print(f"❌ Arquivo não encontrado: {input_file}")
+    except Exception as e:
+        print(f"❌ Erro ao processar arquivo: {e}")
 
 if __name__ == '__main__':
     main()
