@@ -286,16 +286,15 @@ class LL1Parser:
                 self.advance()  # consume ')'
                 return ASTNode('MEM_ASSIGN', children=[value])
         
-        # Parse infix expression: (operand operator operand)
+        # Parse RPN expression: (operand1 operand2 operator)
         operand1 = self.parse_operand()
+        operand2 = self.parse_operand()
         
         if not self.is_operator(self.current_token):
             raise SyntaxError(f"Expected operator, got {self.current_token}")
         
         operator = self.current_token.value
         self.advance()  # consume operator
-        
-        operand2 = self.parse_operand()
         
         if self.current_token.value != ')':
             raise SyntaxError(f"Expected ')', got {self.current_token}")
@@ -319,70 +318,56 @@ class LL1Parser:
         """Parse if-then-else expression"""
         self.advance()  # consume 'if'
         
-        if self.current_token.value != '(':
+        if self.current_token.value != '(': 
             raise SyntaxError(f"Esperado '(' após 'if', recebeu {self.current_token}")
         self.advance()  # consume '('
-        
-        # Parse condition in infix format
-        left = self.parse_operand()
-        
+        # Parse condition in RPN format
+        cond_operand1 = self.parse_operand()
+        cond_operand2 = self.parse_operand()
         if not self.is_operator(self.current_token):
             raise SyntaxError(f"Esperado operador, recebeu {self.current_token}")
-        operator = self.current_token.value
+        cond_operator = self.current_token.value
         self.advance()  # consume operator
-        
-        right = self.parse_operand()
-        condition = ASTNode('BINARY_OP', value=operator, children=[left, right])
-        
         if self.current_token.value != ')':
             raise SyntaxError(f"Esperado ')', recebeu {self.current_token}")
         self.advance()  # consume ')'
+        condition = ASTNode('BINARY_OP', value=cond_operator, children=[cond_operand1, cond_operand2])
         
         if self.current_token.value != 'then':
             raise SyntaxError(f"Esperado 'then', recebeu {self.current_token}")
         self.advance()  # consume 'then'
-        
-        if self.current_token.value != '(':
+        if self.current_token.value != '(': 
             raise SyntaxError(f"Esperado '(' após 'then', recebeu {self.current_token}")
         self.advance()  # consume '('
-        
-        # Parse then branch in infix format
-        left = self.parse_operand()
-        
+        # Parse then branch in RPN format
+        then_operand1 = self.parse_operand()
+        then_operand2 = self.parse_operand()
         if not self.is_operator(self.current_token):
             raise SyntaxError(f"Esperado operador, recebeu {self.current_token}")
-        operator = self.current_token.value
+        then_operator = self.current_token.value
         self.advance()  # consume operator
-        
-        right = self.parse_operand()
-        then_branch = ASTNode('BINARY_OP', value=operator, children=[left, right])
-        
         if self.current_token.value != ')':
             raise SyntaxError(f"Esperado ')', recebeu {self.current_token}")
         self.advance()  # consume ')'
+        then_branch = ASTNode('BINARY_OP', value=then_operator, children=[then_operand1, then_operand2])
         
         if self.current_token.value != 'else':
             raise SyntaxError(f"Esperado 'else', recebeu {self.current_token}")
         self.advance()  # consume 'else'
-        
-        if self.current_token.value != '(':
+        if self.current_token.value != '(': 
             raise SyntaxError(f"Esperado '(' após 'else', recebeu {self.current_token}")
         self.advance()  # consume '('
-        
-        # Parse else branch in infix format
-        left = self.parse_operand()
-        
+        # Parse else branch in RPN format
+        else_operand1 = self.parse_operand()
+        else_operand2 = self.parse_operand()
         if not self.is_operator(self.current_token):
             raise SyntaxError(f"Esperado operador, recebeu {self.current_token}")
-        operator = self.current_token.value
+        else_operator = self.current_token.value
         self.advance()  # consume operator
-        
-        right = self.parse_operand()
-        else_branch = ASTNode('BINARY_OP', value=operator, children=[left, right])
-        
         if self.current_token.value != ')':
             raise SyntaxError(f"Esperado ')', recebeu {self.current_token}")
         self.advance()  # consume ')'
+        else_branch = ASTNode('BINARY_OP', value=else_operator, children=[else_operand1, else_operand2])
         
         return ASTNode('IF', children=[condition, then_branch, else_branch])
     
