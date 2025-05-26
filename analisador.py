@@ -111,7 +111,7 @@ Token = namedtuple('Token', ['value', 'type', 'line', 'col'])
 
 # Global variables
 OPERATORS = {'+', '-', '*', '/', '%', '^', '|', '<', '>', '==', '!=', '<=', '>='}
-KEYWORDS = {'RES', 'MEM', 'if', 'then', 'else', 'for', 'V'}
+KEYWORDS = {'RES', 'MEM', 'if', 'then', 'else', 'for'}
 
 history = []
 memory = FLOAT_TYPE(0.0)
@@ -183,6 +183,9 @@ class ASTNode:
             elif op in {'/', '|', '%'}:
                 if left_type not in ['INT', 'REAL'] or right_type not in ['INT', 'REAL']:
                     raise TypeError(f"Operação {op} requer operandos numéricos")
+                # Se ambos são INT e é módulo ou divisão inteira, retorna INT
+                if left_type == 'INT' and right_type == 'INT' and op in {'%', '/'}:
+                    return 'INT'
                 return 'REAL'
             
             # Operações de comparação
@@ -245,7 +248,7 @@ class LL1Parser:
         elif self.current_token.value == 'if':
             return self.parse_if()
         else:
-            raise SyntaxError(f"Token inesperado {self.current_token}. Lembre-se que a sintaxe deve estar em RPN (Reverse Polish Notation).\nExemplo: if ( 5 10 < ) then ( 20 15 + ) else ( 50 15 - )")
+            raise SyntaxError(f"Token inesperado: {self.current_token}. A sintaxe deve estar em RPN (Notação Polonesa Reversa).")
     
     def parse_paren_expr(self):
         """Parse expression inside parentheses"""
@@ -254,39 +257,56 @@ class LL1Parser:
         
         # Special constructs
         if first_token.value == 'if':
-            return self.parse_if()
+            result = self.parse_if()
+            # Consome parêntese de fechamento se existir (para robustez)
+            if self.current_token.value == ')':
+                self.advance()  # consume ')'
+            return result
         elif first_token.value == 'for':
             return self.parse_for()
         elif first_token.value == 'MEM' and self.peek().value == ')':
-            # (MEM)
-            self.advance()  # consume 'MEM'
-            if self.current_token.value != ')':
-                raise SyntaxError(f"Expected ')', got {self.current_token}")
-            self.advance()  # consume ')'
-            return ASTNode('MEM')
+            return self.parse_mem_expr()
         
         # Check for (INT RES) or (NUM MEM)
         if first_token.type in ['INT', 'REAL']:
             second_token = self.peek()
             if second_token.value == 'RES' and first_token.type == 'INT':
-                # (INT RES)
-                index = int(first_token.value)
-                self.advance()  # consume INT
-                self.advance()  # consume 'RES'
-                if self.current_token.value != ')':
-                    raise SyntaxError(f"Expected ')', got {self.current_token}")
-                self.advance()  # consume ')'
-                return ASTNode('RES', children=[ASTNode('INT', value=index)])
+                return self.parse_res_expr()
             elif second_token.value == 'MEM':
-                # (NUM MEM)
-                value = self.parse_number()
-                self.advance()  # consume 'MEM'
-                if self.current_token.value != ')':
-                    raise SyntaxError(f"Expected ')', got {self.current_token}")
-                self.advance()  # consume ')'
-                return ASTNode('MEM_ASSIGN', children=[value])
+                return self.parse_mem_assign_expr()
         
         # Parse RPN expression: (operand1 operand2 operator)
+        return self.parse_binary_expr()
+    
+    def parse_mem_expr(self):
+        """Parse (MEM) expression"""
+        self.advance()  # consume 'MEM'
+        if self.current_token.value != ')':
+            raise SyntaxError(f"Expected ')', got {self.current_token}")
+        self.advance()  # consume ')'
+        return ASTNode('MEM')
+    
+    def parse_res_expr(self):
+        """Parse (INT RES) expression"""
+        index = int(self.current_token.value)
+        self.advance()  # consume INT
+        self.advance()  # consume 'RES'
+        if self.current_token.value != ')':
+            raise SyntaxError(f"Expected ')', got {self.current_token}")
+        self.advance()  # consume ')'
+        return ASTNode('RES', children=[ASTNode('INT', value=index)])
+    
+    def parse_mem_assign_expr(self):
+        """Parse (NUM MEM) expression"""
+        value = self.parse_number()
+        self.advance()  # consume 'MEM'
+        if self.current_token.value != ')':
+            raise SyntaxError(f"Expected ')', got {self.current_token}")
+        self.advance()  # consume ')'
+        return ASTNode('MEM_ASSIGN', children=[value])
+    
+    def parse_binary_expr(self):
+        """Parse (operand1 operand2 operator) expression"""
         operand1 = self.parse_operand()
         operand2 = self.parse_operand()
         
@@ -561,17 +581,17 @@ def evaluate_ast(node):
                 return FLOAT_TYPE(left * right)
             elif op == '/':  # Divisão real
                 if right == 0:
-                    raise ZeroDivisionError("Divisão por zero")
+                    raise TypeError("Erro de tipo: Divisão por zero não é permitida")
                 return FLOAT_TYPE(left / right)
             elif op == '%':  # Modulo
                 if right == 0:
-                    raise ZeroDivisionError("Modulo por zero")
+                    raise TypeError("Erro de tipo: Módulo por zero não é permitido")
                 return FLOAT_TYPE(left % right)
             elif op == '^':  # Power
                 return FLOAT_TYPE(left ** right)
             elif op == '|':  # Divisão real
                 if right == 0:
-                    raise ZeroDivisionError("Divisão por zero")
+                    raise TypeError("Erro de tipo: Divisão por zero não é permitida")
                 return FLOAT_TYPE(left / right)
         elif node_type == 'INT':
             # Operações que retornam INT
@@ -583,11 +603,11 @@ def evaluate_ast(node):
                 return int(left * right)
             elif op == '/':  # Divisão inteira
                 if right == 0:
-                    raise ZeroDivisionError("Divisão por zero")
+                    raise TypeError("Erro de tipo: Divisão por zero não é permitida")
                 return int(left) // int(right)
             elif op == '%':  # Modulo
                 if right == 0:
-                    raise ZeroDivisionError("Modulo por zero")
+                    raise TypeError("Erro de tipo: Módulo por zero não é permitido")
                 return int(left) % int(right)
             elif op == '^':  # Power com expoente inteiro
                 return int(left ** int(right))
@@ -666,42 +686,50 @@ def main():
             print(f"\n📝 Processando linha {line_num}: {line}")
             
             # Lexical analysis
-            tokens = dfa_lexer(line, line_num)
-            if not tokens:
-                continue
-                
-            print("\n🔍 Tokens encontrados:")
-            for token in tokens:
-                print(f"  {token}")
-                
-            # Syntactic analysis
             try:
-                parser = LL1Parser(tokens)
-                ast = parser.parse()
-                
-                # Convertendo AST para JSON
-                ast_json = ast_to_json(ast)
-                print("\n📊 AST em formato JSON:")
-                print(json.dumps(ast_json, indent=2))
-                
-                # Visualização do AST
-                if GRAPHVIZ_AVAILABLE:
-                    visualize_ast(ast, f"ast_line_{line_num}")
-                    print(f"\n🖼️  AST visualizado em ast_line_{line_num}.pdf")
-                else:
-                    print("\n📝 Representação textual do AST:")
-                    print_ast_text(ast)
-                
-                # Evaluation
-                result = evaluate_ast(ast)
-                print(f"\n✨ Resultado: {result}")
-                
+                tokens = dfa_lexer(line, line_num)
+                if not tokens:
+                    continue
+                    
+                print("\n🔍 Tokens encontrados:")
+                for token in tokens:
+                    print(f"  {token}")
+                    
+                # Syntactic analysis
+                try:
+                    parser = LL1Parser(tokens)
+                    ast = parser.parse()
+                    
+                    # Convertendo AST para JSON
+                    ast_json = ast_to_json(ast)
+                    print("\n📊 AST em formato JSON:")
+                    print(json.dumps(ast_json, indent=2))
+                    
+                    # Visualização do AST
+                    if GRAPHVIZ_AVAILABLE:
+                        visualize_ast(ast, f"ast_line_{line_num}")
+                        print(f"\n🖼️  AST visualizado em ast_line_{line_num}.pdf")
+                    else:
+                        print("\n📝 Representação textual do AST:")
+                        print_ast_text(ast)
+                    
+                    # Evaluation
+                    result = evaluate_ast(ast)
+                    print(f"\n✨ Resultado: {result}")
+                    history.append(result)  # Adiciona o resultado ao histórico
+                    
+                except SyntaxError as e:
+                    print(f"❌ Erro de sintaxe: {e}")
+                except TypeError as e:
+                    print(f"❌ Erro de tipo: {e}")
+                except ZeroDivisionError as e:
+                    print(f"❌ Erro de tipo: Divisão por zero não é permitida")
+                except Exception as e:
+                    print(f"❌ Erro inesperado: {e}")
             except SyntaxError as e:
-                print(f"❌ Erro de sintaxe: {e}")
-            except TypeError as e:
-                print(f"❌ Erro de tipo: {e}")
+                print(f"❌ Erro léxico na linha {line_num}: {e}")
             except Exception as e:
-                print(f"❌ Erro inesperado: {e}")
+                print(f"❌ Erro inesperado na análise léxica da linha {line_num}: {e}")
                 
     except FileNotFoundError:
         print(f"❌ Arquivo não encontrado: {input_file}")
