@@ -72,7 +72,6 @@ from collections import namedtuple, deque
 import json
 import platform
 import struct
-import pandas as pd
 from tabulate import tabulate
 
 # Try importing Graphviz for AST visualization
@@ -197,18 +196,6 @@ class LL1Table:
         elif '.' in terminal:
             terminal = 'REAL'
         return self.table.get(non_terminal, {}).get(terminal)
-    
-    def is_valid_grammar(self):
-        """Verifica se a gramática é LL(1)"""
-        for non_terminal in self.table:
-            productions = self.table[non_terminal]
-            first_sets = set()
-            for terminal, production in productions.items():
-                first_set = self._get_first_of_production(production)
-                if first_sets.intersection(first_set):
-                    return False
-                first_sets.update(first_set)
-        return True
     
     def _get_first_of_production(self, production):
         """Retorna o conjunto FIRST de uma produção"""
