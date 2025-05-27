@@ -72,6 +72,8 @@ from collections import namedtuple, deque
 import json
 import platform
 import struct
+import pandas as pd
+from tabulate import tabulate
 
 # Try importing Graphviz for AST visualization
 try:
@@ -86,6 +88,137 @@ try:
 except ImportError:
     GRAPHVIZ_AVAILABLE = False
     print("❌ Python's graphviz module not installed. Execute: pip install graphviz")
+
+class FirstSet:
+    def __init__(self):
+        self.sets = {
+            'S': {'(', 'INT', 'REAL'},
+            'EXPR': {'(', 'INT', 'REAL'},
+            'OPERAND': {'(', 'INT', 'REAL', 'MEM'},
+            'OPERATOR': set(OPERATORS),  # Usa o conjunto de operadores definido globalmente
+            'NUM': {'INT', 'REAL'}
+        }
+    
+    def get(self, non_terminal):
+        return self.sets.get(non_terminal, set())
+
+class FollowSet:
+    def __init__(self):
+        self.sets = {
+            'S': {'$'},
+            'EXPR': {')', 'then', 'else', '$'},
+            'OPERAND': {'(', 'INT', 'REAL', 'MEM', '+', '-', '*', '/', '%', '^', '|', '<', '>', '==', '!=', '<=', '>='},
+            'OPERATOR': {')'},
+            'NUM': {')', 'MEM', 'RES', '+', '-', '*', '/', '%', '^', '|', '<', '>', '==', '!=', '<=', '>='}
+        }
+    
+    def get(self, non_terminal):
+        return self.sets.get(non_terminal, set())
+
+class LL1Table:
+    def __init__(self):
+        self.first_sets = FirstSet()
+        self.follow_sets = FollowSet()
+        self.table = {}
+        self._build_table()
+    
+    def _build_table(self):
+        # S -> EXPR
+        self._add_rule('S', '(', 'EXPR')
+        self._add_rule('S', 'INT', 'EXPR')
+        self._add_rule('S', 'REAL', 'EXPR')
+        
+        # EXPR -> ( PARSE_PAREN_EXPR
+        self._add_rule('EXPR', '(', '( PARSE_PAREN_EXPR')
+        # EXPR -> NUM
+        self._add_rule('EXPR', 'INT', 'NUM')
+        self._add_rule('EXPR', 'REAL', 'NUM')
+        
+        # PARSE_PAREN_EXPR -> if EXPR then EXPR else EXPR )
+        self._add_rule('PARSE_PAREN_EXPR', 'if', 'if EXPR then EXPR else EXPR )')
+        # PARSE_PAREN_EXPR -> for INT EXPR )
+        self._add_rule('PARSE_PAREN_EXPR', 'for', 'for INT EXPR )')
+        # PARSE_PAREN_EXPR -> CHECK_SECOND
+        self._add_rule('PARSE_PAREN_EXPR', 'INT', 'CHECK_SECOND')
+        self._add_rule('PARSE_PAREN_EXPR', 'REAL', 'CHECK_SECOND')
+        # PARSE_PAREN_EXPR -> CHECK_TYPE
+        self._add_rule('PARSE_PAREN_EXPR', 'MEM', 'CHECK_TYPE')
+        # PARSE_PAREN_EXPR -> OPERAND OPERAND OPERATOR )
+        self._add_rule('PARSE_PAREN_EXPR', '(', 'OPERAND OPERAND OPERATOR )')
+        
+        # CHECK_SECOND -> INT RES )
+        self._add_rule('CHECK_SECOND', 'RES', 'INT RES )')
+        # CHECK_SECOND -> NUM MEM )
+        self._add_rule('CHECK_SECOND', 'MEM', 'NUM MEM )')
+        # CHECK_SECOND -> OPERAND OPERAND OPERATOR )
+        self._add_rule('CHECK_SECOND', '(', 'OPERAND OPERAND OPERATOR )')
+        self._add_rule('CHECK_SECOND', 'INT', 'OPERAND OPERAND OPERATOR )')
+        self._add_rule('CHECK_SECOND', 'REAL', 'OPERAND OPERAND OPERATOR )')
+        self._add_rule('CHECK_SECOND', 'MEM', 'OPERAND OPERAND OPERATOR )')
+        
+        # CHECK_TYPE -> MEM )
+        self._add_rule('CHECK_TYPE', ')', 'MEM )')
+        # CHECK_TYPE -> OPERAND OPERAND OPERATOR )
+        self._add_rule('CHECK_TYPE', '(', 'OPERAND OPERAND OPERATOR )')
+        # CHECK_TYPE -> INT
+        self._add_rule('CHECK_TYPE', 'INT', 'OPERAND OPERAND OPERATOR )')
+        # CHECK_TYPE -> REAL
+        self._add_rule('CHECK_TYPE', 'REAL', 'OPERAND OPERAND OPERATOR )')
+        # CHECK_TYPE -> MEM
+        self._add_rule('CHECK_TYPE', 'MEM', 'OPERAND OPERAND OPERATOR )')
+        
+        # OPERAND -> EXPR
+        self._add_rule('OPERAND', '(', 'EXPR')
+        # OPERAND -> NUM
+        self._add_rule('OPERAND', 'INT', 'NUM')
+        # OPERAND -> REAL
+        self._add_rule('OPERAND', 'REAL', 'NUM')
+        # OPERAND -> MEM
+        self._add_rule('OPERAND', 'MEM', 'MEM')
+        
+        # NUM -> INT
+        self._add_rule('NUM', 'INT', 'INT')
+        # NUM -> REAL
+        self._add_rule('NUM', 'REAL', 'REAL')
+        
+        # Adicionar regras para operadores
+        for op in OPERATORS:
+            self._add_rule('OPERATOR', op, op)
+    
+    def _add_rule(self, non_terminal, terminal, production):
+        if non_terminal not in self.table:
+            self.table[non_terminal] = {}
+        self.table[non_terminal][terminal] = production
+    
+    def get_production(self, non_terminal, terminal):
+        # Se o terminal for um número, usar o tipo 'INT' ou 'REAL'
+        if terminal.isdigit():
+            terminal = 'INT'
+        elif '.' in terminal:
+            terminal = 'REAL'
+        return self.table.get(non_terminal, {}).get(terminal)
+    
+    def is_valid_grammar(self):
+        """Verifica se a gramática é LL(1)"""
+        for non_terminal in self.table:
+            productions = self.table[non_terminal]
+            first_sets = set()
+            for terminal, production in productions.items():
+                first_set = self._get_first_of_production(production)
+                if first_sets.intersection(first_set):
+                    return False
+                first_sets.update(first_set)
+        return True
+    
+    def _get_first_of_production(self, production):
+        """Retorna o conjunto FIRST de uma produção"""
+        first_set = set()
+        for symbol in production.split():
+            if symbol in self.first_sets.sets:
+                first_set.update(self.first_sets.get(symbol))
+            else:
+                first_set.add(symbol)
+        return first_set
 
 # Determine appropriate float precision based on architecture
 def get_float_type():
@@ -205,6 +338,7 @@ class LL1Parser:
     def __init__(self, tokens):
         self.tokens = deque(tokens)
         self.current_token = None
+        self.ll1_table = LL1Table()
         self.advance()
         
     def advance(self):
@@ -232,6 +366,9 @@ class LL1Parser:
     
     def parse_s(self):
         """S -> EXPR"""
+        production = self.ll1_table.get_production('S', self.current_token.value)
+        if not production:
+            raise SyntaxError(f"Token inesperado: {self.current_token}")
         return self.parse_expr()
     
     def is_operator(self, token):
@@ -240,6 +377,10 @@ class LL1Parser:
     
     def parse_expr(self):
         """Parse expression according to RPN grammar"""
+        production = self.ll1_table.get_production('EXPR', self.current_token.value)
+        if not production:
+            raise SyntaxError(f"Token inesperado: {self.current_token}")
+            
         if self.current_token.value == '(':
             self.advance()  # consume '('
             return self.parse_paren_expr()
@@ -252,6 +393,10 @@ class LL1Parser:
     
     def parse_paren_expr(self):
         """Parse expression inside parentheses"""
+        production = self.ll1_table.get_production('PARSE_PAREN_EXPR', self.current_token.value)
+        if not production:
+            raise SyntaxError(f"Token inesperado: {self.current_token}")
+            
         # Look at first token to determine expression type
         first_token = self.current_token
         
@@ -280,6 +425,10 @@ class LL1Parser:
     
     def parse_mem_expr(self):
         """Parse (MEM) expression"""
+        production = self.ll1_table.get_production('CHECK_TYPE', ')')
+        if not production:
+            raise SyntaxError(f"Token inesperado: {self.current_token}")
+            
         self.advance()  # consume 'MEM'
         if self.current_token.value != ')':
             raise SyntaxError(f"Expected ')', got {self.current_token}")
@@ -288,6 +437,10 @@ class LL1Parser:
     
     def parse_res_expr(self):
         """Parse (INT RES) expression"""
+        production = self.ll1_table.get_production('CHECK_SECOND', 'RES')
+        if not production:
+            raise SyntaxError(f"Token inesperado: {self.current_token}")
+            
         index = int(self.current_token.value)
         self.advance()  # consume INT
         self.advance()  # consume 'RES'
@@ -298,6 +451,10 @@ class LL1Parser:
     
     def parse_mem_assign_expr(self):
         """Parse (NUM MEM) expression"""
+        production = self.ll1_table.get_production('CHECK_SECOND', 'MEM')
+        if not production:
+            raise SyntaxError(f"Token inesperado: {self.current_token}")
+            
         value = self.parse_number()
         self.advance()  # consume 'MEM'
         if self.current_token.value != ')':
@@ -324,6 +481,10 @@ class LL1Parser:
     
     def parse_operand(self):
         """Parse operand: EXPR | NUM | MEM"""
+        production = self.ll1_table.get_production('OPERAND', self.current_token.value)
+        if not production:
+            raise SyntaxError(f"Token inesperado: {self.current_token}")
+            
         if self.current_token.value == '(':
             return self.parse_expr()
         elif self.current_token.type in ['INT', 'REAL']:
@@ -336,6 +497,10 @@ class LL1Parser:
     
     def parse_if(self):
         """Parse if-then-else expression"""
+        production = self.ll1_table.get_production('PARSE_PAREN_EXPR', 'if')
+        if not production:
+            raise SyntaxError(f"Token inesperado: {self.current_token}")
+            
         self.advance()  # consume 'if'
         
         if self.current_token.value != '(': 
@@ -393,6 +558,10 @@ class LL1Parser:
     
     def parse_for(self):
         """Parse for loop expression"""
+        production = self.ll1_table.get_production('PARSE_PAREN_EXPR', 'for')
+        if not production:
+            raise SyntaxError(f"Token inesperado: {self.current_token}")
+            
         self.advance()  # consume 'for'
         
         if self.current_token.type != 'INT':
@@ -410,6 +579,10 @@ class LL1Parser:
     
     def parse_number(self):
         """Parse numeric literal"""
+        production = self.ll1_table.get_production('NUM', self.current_token.type)
+        if not production:
+            raise SyntaxError(f"Token inesperado: {self.current_token}")
+            
         if self.current_token.type == 'INT':
             node = ASTNode('INT', value=int(self.current_token.value))
             self.advance()
@@ -666,6 +839,106 @@ def ast_to_json(node):
     """Converte um nó AST para formato JSON"""
     return node.to_dict()
 
+def print_ll1_table_tabulate(ll1_table):
+    non_terminals = list(ll1_table.table.keys())
+    terminals = set()
+    for rules in ll1_table.table.values():
+        terminals.update(rules.keys())
+    terminals = sorted(terminals)
+
+    max_cols = 8  # Número máximo de colunas por bloco
+    total_cols = len(terminals)
+
+    # Exibir a tabela em blocos
+    for start in range(0, total_cols, max_cols):
+        end = min(start + max_cols, total_cols)
+        term_block = terminals[start:end]
+
+        # Montar matriz de dados
+        data = []
+        for nt in non_terminals:
+            row = []
+            for t in term_block:
+                prod = ll1_table.table[nt].get(t, "—")
+                row.append(prod)
+            data.append(row)
+
+        # Cabeçalho
+        headers = ["NT "] + term_block
+        table = []
+        for nt, row in zip(non_terminals, data):
+            table.append([nt] + row)
+
+        print("\nTabela LL(1) de Derivação (colunas {} a {}):\n".format(start+1, end))
+        print(tabulate(table, headers=headers, tablefmt="fancy_grid", stralign="center", numalign="center"))
+
+def print_derivation_process(tokens, parser):
+    """Mostra o processo de derivação de forma detalhada"""
+    print("\n📝 Processo de Derivação:")
+    print("=" * 50)
+    
+    # Pilha inicial
+    stack = ['S']
+    # Converte os tokens para seus tipos ao invés dos valores
+    input_tokens = []
+    for t in tokens:
+        if t.type in ['INT', 'REAL']:
+            input_tokens.append(t.type)
+        elif t.type == 'OPERATOR':
+            input_tokens.append(t.value)  # Usa o valor do operador
+        else:
+            input_tokens.append(t.value)
+    input_tokens.append('$')
+    
+    current_input = 0
+    
+    print(f"Pilha: {' '.join(stack)}")
+    print(f"Entrada: {' '.join(input_tokens)}")
+    print("-" * 50)
+    
+    while stack:
+        top = stack[-1]
+        current_token = input_tokens[current_input]
+        
+        # Se o topo da pilha é um terminal
+        if top not in parser.ll1_table.table:
+            # Verifica se é um operador
+            if top in OPERATORS and current_token in OPERATORS:
+                print(f"✓ Consumindo operador: {top}")
+                stack.pop()
+                current_input += 1
+            # Verifica se é um parêntese ou outro terminal
+            elif top == current_token:
+                print(f"✓ Consumindo terminal: {top}")
+                stack.pop()
+                current_input += 1
+            else:
+                print(f"❌ Erro: Terminal esperado '{top}', encontrado '{current_token}'")
+                break
+        else:
+            # Se é um não-terminal, busca a produção na tabela
+            production = parser.ll1_table.get_production(top, current_token)
+            if production:
+                print(f"→ Aplicando regra: {top} -> {production}")
+                stack.pop()
+                # Adiciona os símbolos da produção na ordem inversa
+                symbols = production.split()
+                for symbol in reversed(symbols):
+                    if symbol != 'ε':  # Ignora produções vazias
+                        stack.append(symbol)
+            else:
+                print(f"❌ Erro: Não há regra para {top} com entrada '{current_token}'")
+                break
+        
+        print(f"Pilha: {' '.join(stack)}")
+        print(f"Entrada: {' '.join(input_tokens[current_input:])}")
+        print("-" * 50)
+    
+    if not stack and current_input == len(input_tokens) - 1:
+        print("✅ Derivação concluída com sucesso!")
+    else:
+        print("❌ Derivação falhou!")
+
 def main():
     if len(sys.argv) < 2:
         print("❌ Por favor, forneça um arquivo de entrada.")
@@ -674,6 +947,10 @@ def main():
 
     input_file = sys.argv[1]
     
+    # Exibir a tabela LL(1) antes de processar o arquivo
+    ll1_table = LL1Table()
+    print_ll1_table_tabulate(ll1_table)
+
     try:
         with open(input_file, 'r') as f:
             lines = f.readlines()
@@ -698,6 +975,10 @@ def main():
                 # Syntactic analysis
                 try:
                     parser = LL1Parser(tokens)
+                    
+                    # Mostrar processo de derivação
+                    print_derivation_process(tokens, parser)
+                    
                     ast = parser.parse()
                     
                     # Convertendo AST para JSON
