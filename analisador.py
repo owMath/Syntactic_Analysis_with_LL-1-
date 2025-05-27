@@ -73,6 +73,7 @@ import json
 import platform
 import struct
 from tabulate import tabulate
+import html
 
 # Try importing Graphviz for AST visualization
 try:
@@ -775,32 +776,28 @@ def evaluate_ast(node):
         raise ValueError(f"Unknown node type: {node.type}")
 
 def visualize_ast(node, filename="ast"):
-    """Visualize AST as PDF and text"""
+    """Visualize AST as PDF, PNG and text"""
     if GRAPHVIZ_AVAILABLE:
         dot = Digraph(comment='Abstract Syntax Tree')
         dot.attr(rankdir='TB', size='8,10')
-        
         def add_nodes(node, parent_id=None):
             node_id = str(node.id)
             label = f"{node.type}"
             if node.value is not None:
                 label += f"\n{node.value}"
-            
             dot.node(node_id, label)
-            
             if parent_id:
                 dot.edge(parent_id, node_id)
-            
             for child in node.children:
                 add_nodes(child, node_id)
-        
         add_nodes(node)
-        # Generate PDF only
+        # Gera PDF
         dot.render(filename, format='pdf', cleanup=True)
-        print(f"📊 Tree saved as: {filename}.pdf")
+        # Gera PNG
+        dot.render(filename, format='png', cleanup=False)
+        print(f"📊 Tree saved as: {filename}.pdf e {filename}.png")
     else:
         print("⚠️  Graphviz not installed - saving text format only")
-    
     # Always save as text too
     with open(f"{filename}.txt", 'w') as f:
         f.write(str(node.to_dict()))
@@ -926,6 +923,138 @@ def print_derivation_process(tokens, parser):
     else:
         print("❌ Derivação falhou!")
 
+def exportar_tabela_ll1_html(ll1_table, filename):
+    non_terminals = list(ll1_table.table.keys())
+    terminals = set()
+    for rules in ll1_table.table.values():
+        terminals.update(rules.keys())
+    terminals = sorted(terminals)
+    headers = ['NT'] + terminals
+    rows = []
+    for nt in non_terminals:
+        row = [nt]
+        for t in terminals:
+            prod = ll1_table.table[nt].get(t, '—')
+            row.append(prod)
+        rows.append(row)
+    # Monta tabela HTML única
+    table_html = '<table border="1" style="border-collapse:collapse; margin-bottom:20px;">'
+    table_html += '<caption>Tabela LL(1) de Derivação (completa)</caption>'
+    table_html += '<tr>' + ''.join(f'<th>{html.escape(str(h))}</th>' for h in headers) + '</tr>'
+    for row in rows:
+        table_html += '<tr>' + ''.join(f'<td>{html.escape(str(cell))}</td>' for cell in row) + '</tr>'
+    table_html += '</table>'
+    return table_html
+
+def exportar_tokens_html(tokens):
+    html_tokens = '<h3>Tokens encontrados:</h3><ul>'
+    for token in tokens:
+        html_tokens += f'<li>{html.escape(str(token))}</li>'
+    html_tokens += '</ul>'
+    return html_tokens
+
+def exportar_derivacao_html(tokens, parser):
+    stack = ['S']
+    input_tokens = []
+    for t in tokens:
+        if t.type in ['INT', 'REAL']:
+            input_tokens.append(t.type)
+        elif t.type == 'OPERATOR':
+            input_tokens.append(t.value)
+        else:
+            input_tokens.append(t.value)
+    input_tokens.append('$')
+    current_input = 0
+    html_steps = ['<h3>Processo de Derivação:</h3><ol>']
+    while stack:
+        top = stack[-1]
+        current_token = input_tokens[current_input]
+        if top not in parser.ll1_table.table:
+            if top in OPERATORS and current_token in OPERATORS:
+                html_steps.append(f'<li>Consumindo operador: <b>{html.escape(str(top))}</b></li>')
+                stack.pop()
+                current_input += 1
+            elif top == current_token:
+                html_steps.append(f'<li>Consumindo terminal: <b>{html.escape(str(top))}</b></li>')
+                stack.pop()
+                current_input += 1
+            else:
+                html_steps.append(f'<li style="color:red;">Erro: Terminal esperado "{html.escape(str(top))}", encontrado "{html.escape(str(current_token))}"</li>')
+                break
+        else:
+            production = parser.ll1_table.get_production(top, current_token)
+            if production:
+                html_steps.append(f'<li>Aplicando regra: <b>{html.escape(str(top))} -&gt; {html.escape(str(production))}</b></li>')
+                stack.pop()
+                symbols = production.split()
+                for symbol in reversed(symbols):
+                    if symbol != 'ε':
+                        stack.append(symbol)
+            else:
+                html_steps.append(f'<li style="color:red;">Erro: Não há regra para {html.escape(str(top))} com entrada "{html.escape(str(current_token))}"</li>')
+                break
+    html_steps.append('</ol>')
+    return '\n'.join(html_steps)
+
+def exportar_ast_html(ast):
+    def node_to_html(node):
+        tipo = ''
+        try:
+            tipo = f' [{node.get_type()}]'
+        except Exception as e:
+            tipo = f' [ERRO: {str(e)}]'
+        label = f'<b>{html.escape(node.type)}</b>{html.escape(tipo)}'
+        if node.value is not None:
+            label += f': {html.escape(str(node.value))}'
+        if node.children:
+            return f'<li>{label}<ul>' + ''.join(node_to_html(child) for child in node.children) + '</ul></li>'
+        else:
+            return f'<li>{label}</li>'
+    return '<h3>Árvore Sintática (AST):</h3><ul>' + node_to_html(ast) + '</ul>'
+
+def exportar_resultado_html(ll1_table, tokens, parser, ast, resultado, linha, filename):
+    import json
+    import os
+    ast_json_str = json.dumps(ast_to_json(ast), indent=2, ensure_ascii=False)
+    html_content = f'''<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Resultado Análise Linha {linha}</title>
+<style>
+body {{ background: #181818; color: #fff; font-family: Arial, sans-serif; text-align: center; }}
+h2, h3, p, caption {{ text-align: center; }}
+table {{ background: #222; color: #fff; margin-left: auto; margin-right: auto; }}
+th, td {{ padding: 6px 10px; border: 1px solid #555; }}
+th {{ background: #333; }}
+tr:nth-child(even) {{ background: #222; }}
+tr:nth-child(odd) {{ background: #1a1a1a; }}
+caption {{ color: #ffd700; font-size: 1.1em; margin-bottom: 6px; }}
+ul, ol, pre {{ display: inline-block; text-align: left; margin: 0 auto 20px auto; }}
+li {{ margin-bottom: 2px; }}
+pre {{ background: #222; color: #ffd700; padding: 10px; border-radius: 6px; }}
+</style>
+</head>
+<body>
+<h2>Resultado da Análise - Linha {linha}</h2>
+{exportar_tabela_ll1_html(ll1_table, filename)}
+{exportar_tokens_html(tokens)}
+{exportar_derivacao_html(tokens, parser)}
+{exportar_ast_html(ast)}'''
+    # Adiciona a imagem da árvore se existir
+    img_path = f"ast_line_{linha}.png"
+    if os.path.exists(img_path):
+        html_content += f'<h3>Árvore Sintática (imagem):</h3><img src="{img_path}" alt="AST" style="max-width:90%; margin: 20px auto; display: block;">'
+    html_content += f'''
+<h3>AST em formato JSON:</h3>
+<pre>{html.escape(ast_json_str)}</pre>
+<h3>Resultado Final:</h3>
+<p style="color: #ffd700; font-size: 1.2em;">{html.escape(str(resultado))}</p>
+</body>
+</html>'''
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+
 def main():
     if len(sys.argv) < 2:
         print("❌ Por favor, forneça um arquivo de entrada.")
@@ -985,6 +1114,9 @@ def main():
                     result = evaluate_ast(ast)
                     print(f"\n✨ Resultado: {result}")
                     history.append(result)  # Adiciona o resultado ao histórico
+                    
+                    # Exportar resultado para HTML
+                    exportar_resultado_html(ll1_table, tokens, parser, ast, result, line_num, f'resultado_linha_{line_num}.html')
                     
                 except SyntaxError as e:
                     print(f"❌ Erro de sintaxe: {e}")
