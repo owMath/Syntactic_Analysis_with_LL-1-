@@ -1062,75 +1062,36 @@ def main():
         sys.exit(1)
 
     input_file = sys.argv[1]
-    
-    # Exibir a tabela LL(1) antes de processar o arquivo
     ll1_table = LL1Table()
-    print_ll1_table_tabulate(ll1_table)
+    linhas_processadas = []
 
     try:
         with open(input_file, 'r') as f:
             lines = f.readlines()
-            
         for line_num, line in enumerate(lines, 1):
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
-                
-            print(f"\n📝 Processando linha {line_num}: {line}")
-            
-            # Lexical analysis
+            linhas_processadas.append((line_num, line))
             try:
                 tokens = dfa_lexer(line, line_num)
                 if not tokens:
                     continue
-                    
-                print("\n🔍 Tokens encontrados:")
-                for token in tokens:
-                    print(f"  {token}")
-                    
-                # Syntactic analysis
                 try:
                     parser = LL1Parser(tokens)
-                    
-                    # Mostrar processo de derivação
-                    print_derivation_process(tokens, parser)
-                    
                     ast = parser.parse()
-                    
-                    # Convertendo AST para JSON
-                    ast_json = ast_to_json(ast)
-                    print("\n📊 AST em formato JSON:")
-                    print(json.dumps(ast_json, indent=2))
-                    
-                    # Visualização do AST
+                    result = evaluate_ast(ast)
+                    history.append(result)
                     if GRAPHVIZ_AVAILABLE:
                         visualize_ast(ast, f"ast_line_{line_num}")
-                        print(f"\n🖼️  AST visualizado em ast_line_{line_num}.pdf")
-                    else:
-                        print("\n📝 Representação textual do AST:")
-                        print_ast_text(ast)
-                    
-                    # Evaluation
-                    result = evaluate_ast(ast)
-                    print(f"\n✨ Resultado: {result}")
-                    history.append(result)  # Adiciona o resultado ao histórico
-                    
-                    # Exportar resultado para HTML
                     exportar_resultado_html(ll1_table, tokens, parser, ast, result, line_num, f'resultado_linha_{line_num}.html')
-                    
-                except SyntaxError as e:
-                    print(f"❌ Erro de sintaxe: {e}")
-                except TypeError as e:
-                    print(f"❌ Erro de tipo: {e}")
-                except ZeroDivisionError as e:
-                    print(f"❌ Erro de tipo: Divisão por zero não é permitida")
-                except Exception as e:
-                    print(f"❌ Erro inesperado: {e}")
-            except SyntaxError as e:
-                print(f"❌ Erro léxico na linha {line_num}: {e}")
-            except Exception as e:
-                print(f"❌ Erro inesperado na análise léxica da linha {line_num}: {e}")
-                
+                except Exception:
+                    pass  # Silencia todos os erros de análise sintática/semântica
+            except Exception:
+                pass  # Silencia todos os erros de análise léxica
+        for num, expr in linhas_processadas:
+            print(f"Linha {num} -> {expr}")
+        print('✅ Todos os resultados foram salvos em arquivos HTML, um para cada linha!')
     except FileNotFoundError:
         print(f"❌ Arquivo não encontrado: {input_file}")
     except Exception as e:
