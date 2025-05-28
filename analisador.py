@@ -72,7 +72,6 @@ from collections import namedtuple, deque
 import json
 import platform
 import struct
-from tabulate import tabulate
 import html
 
 # Try importing Graphviz for AST visualization
@@ -854,9 +853,6 @@ def ast_to_json(node):
         table = []
         for nt, row in zip(non_terminals, data):
             table.append([nt] + row)
-
-        print("\nTabela LL(1) de Derivação (colunas {} a {}):\n".format(start+1, end))
-        print(tabulate(table, headers=headers, tablefmt="fancy_grid", stralign="center", numalign="center"))
 
 def print_derivation_process(tokens, parser):
     """Mostra o processo de derivação de forma detalhada"""
