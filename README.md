@@ -63,6 +63,9 @@ Condicional:
 Laço:
 (for INT EXPR)
 
+### 📊 Tabela de Derivação (LL1Table)
+- ![Tabela](derivada.png)
+
 ## 🌳 Árvore Sintática Abstrata (AST)
 Para cada linha do arquivo analisado, uma AST é construída.
 Ela é exibida no terminal e salva como PDF (ast_line_X.pdf) e .txt.
@@ -71,7 +74,8 @@ Ela é exibida no terminal e salva como PDF (ast_line_X.pdf) e .txt.
   ```bash
   (10 (5 3 +) *)
   ```
-  Resultado:
+ ![Exec](exec.png)
+
  ```bash
   BINARY_OP: *
   INT: 10
@@ -79,7 +83,8 @@ Ela é exibida no terminal e salva como PDF (ast_line_X.pdf) e .txt.
     INT: 5
     INT: 3
 ```
-  Arquivo PDF criado:
+- ![AST Json](ast.png)
+
 - ![Teste Exemplo](teste_avulso.png)
 
 ## 🧪 Arquivos de Teste
@@ -87,6 +92,7 @@ Ela é exibida no terminal e salva como PDF (ast_line_X.pdf) e .txt.
 - teste1.txt	Operações básicas (soma, divisão, etc.)
 - teste2.txt	Uso de MEM, RES, expressões aninhadas
 - teste3.txt	Estruturas if, for, memória e aninhamentos
+- teste4_erros.txt Expressões com erros
 
 ## 🧾 Gramática LL(1)
 ```bash
@@ -105,9 +111,16 @@ OPERATOR -> + | - | * | / | % | ^ | | | < | > | == | != | <= | >=
 NUM -> INT | REAL
 ```
 
-## 📌 Conjuntos FIRST & FOLLOW + Tabela LL(1)
-Veja o arquivo:
-[📄 PDF: Analisador Sintático - Gramática LL(1)](./Analisador%20Sint%C3%A1tico%20-%20Gram%C3%A1tica%20LL(1).pdf)
+## ❌ Tratamento de Erros
+
+O analisador detecta e reporta os seguintes tipos de erros:
+- Caracteres não reconhecidos
+- Números mal formados
+- Operadores inválidos
+- Parênteses não balanceados
+- Expressões mal formadas
+- Divisão por zero
+- Overflow em operações
 
 ## ✅ Funcionalidades Extras
 - Suporte completo a IEEE754 de meia precisão com numpy.float16
