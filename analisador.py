@@ -430,6 +430,9 @@ class LL1Parser:
             raise SyntaxError(f"Token inesperado: {self.current_token}")
             
         index = int(self.current_token.value)
+        if index <= 0:
+            raise SyntaxError(f"Índice do RES deve ser um número inteiro positivo, recebeu {index}")
+            
         self.advance()  # consume INT
         self.advance()  # consume 'RES'
         if self.current_token.value != ')':
@@ -693,10 +696,11 @@ def evaluate_ast(node):
     elif node.type == 'RES':
         index = evaluate_ast(node.children[0])
         # Ensure index is valid
-        if index > 0 and index <= len(history):
-            return history[-index]
-        else:
-            return 0  # Default value if index is out of bounds
+        if index <= 0:
+            raise ValueError(f"Índice do RES deve ser um número inteiro positivo, recebeu {index}")
+        if index > len(history):
+            raise ValueError(f"Índice do RES ({index}) está fora do histórico (tamanho: {len(history)})")
+        return history[-index]
     elif node.type == 'IF':
         cond = evaluate_ast(node.children[0])
         # Trata condição booleana ou numérica
@@ -822,8 +826,6 @@ def print_ast_text(node, indent=0):
 def ast_to_json(node):
     """Converte um nó AST para formato JSON"""
     return node.to_dict()
-
-def print_ll1_table_tabulate(ll1_table):
     non_terminals = list(ll1_table.table.keys())
     terminals = set()
     for rules in ll1_table.table.values():
@@ -1085,13 +1087,16 @@ def main():
                     if GRAPHVIZ_AVAILABLE:
                         visualize_ast(ast, f"ast_line_{line_num}")
                     exportar_resultado_html(ll1_table, tokens, parser, ast, result, line_num, f'resultado_linha_{line_num}.html')
-                except Exception:
-                    pass  # Silencia todos os erros de análise sintática/semântica
-            except Exception:
-                pass  # Silencia todos os erros de análise léxica
-        for num, expr in linhas_processadas:
-            print(f"Linha {num} -> {expr}")
-        print('✅ Todos os resultados foram salvos em arquivos HTML, um para cada linha!')
+                    print(f"✅ Linha {line_num}: {line} -> {result}")
+                except Exception as e:
+                    print(f"❌ Erro na linha {line_num}: {line}")
+                    print(f"   Erro: {str(e)}")
+                    # Não gera arquivo HTML para linhas com erro
+            except Exception as e:
+                print(f"❌ Erro léxico na linha {line_num}: {line}")
+                print(f"   Erro: {str(e)}")
+                # Não gera arquivo HTML para linhas com erro léxico
+        print('\n✅ Todos os resultados foram salvos em arquivos HTML, um para cada linha válida!')
     except FileNotFoundError:
         print(f"❌ Arquivo não encontrado: {input_file}")
     except Exception as e:
