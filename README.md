@@ -68,7 +68,6 @@ Laço:
 
 ## 🌳 Árvore Sintática Abstrata (AST)
 Para cada linha do arquivo analisado, uma AST é construída.
-Ela é exibida no terminal e salva como PDF (ast_line_X.pdf) e .txt.
 
 - Exemplo:
   ```bash
